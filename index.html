@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>无尽三国 3.0</title>
+    <style>
+        /* === 全局重置 === */
+        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; font-family: "Microsoft YaHei", sans-serif; }
+        body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        
+        /* === 舞台 (容器) === */
+        #stage { position: relative; width: 1280px; height: 900px; background: #111; box-shadow: 0 0 20px #000; overflow: hidden; border: 2px solid #444; }
+        
+        /* === 图层 1：地图 (最底层) === */
+        #map-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+        #map-img { width: 100%; height: 100%; object-fit: fill; }
+        
+        /* === 图层 2：城池 (中间层) === */
+        #city-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 20; pointer-events: none; }
+        .city-point { position: absolute; width: 14px; height: 14px; border-radius: 50%; transform: translate(-50%, -50%); cursor: pointer; pointer-events: auto; transition: 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.3); }
+        .city-point:hover { transform: scale(1.5); border-color: #fff !important; z-index: 100; box-shadow: 0 0 8px #fff; }
+        .city-name-label { position: absolute; left: 18px; top: -1px; color: #fff; font-size: 12px; font-weight: bold; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; white-space: nowrap; pointer-events: none; z-index: 25; }
+
+        /* === 图层 3：UI 面板 (最上层) === */
+        /* 左侧菜单 */
+        #left-menu { position: absolute; top: 80px; left: 10px; width: 160px; z-index: 60; pointer-events: auto; display: flex; flex-direction: column; gap: 5px; }
+        .menu-btn { background: linear-gradient(to right, #333, #111); border: 1px solid #555; padding: 8px 10px; color: #ffd700; font-size: 14px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .menu-btn:hover { background: #444; }
+        .sub-panel { display: none; position: absolute; top: 0; left: 140px; width: 200px; background: rgba(10,10,10,0.95); border: 1px solid #555; border-radius: 4px; padding: 10px; color: #ccc; font-size: 12px; box-shadow: 2px 2px 10px #000; z-index: 61; }
+        .sub-panel.show { display: block; }
+        #stability-panel { position: absolute; top: 10px; left: 200px; width: 180px; height: 40px; background: rgba(0,0,0,0.8); border: 1px solid #ffd700; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; z-index: 60; cursor: pointer; }
+        #stability-details { display: none; position: absolute; top: 55px; left: 200px; width: 180px; background: rgba(10,10,10,0.95); border: 1px solid #ffd700; color: #fff; z-index: 60; max-height: 200px; overflow-y: auto; }
+
+        /* 我的势力面板（左侧） */
+        #my-faction-panel { position: absolute; top: 220px; left: 10px; width: 160px; background: rgba(0,0,0,0.85); border: 1px solid #ffd700; border-radius: 8px; padding: 12px; z-index: 15; color: #fff; pointer-events: none; }
+        /* 士气看板（左侧，在我的势力下面） */
+        #morale-panel { position: absolute; top: 440px; left: 10px; width: 160px; background: rgba(0,0,0,0.85); border: 1px solid #ffd700; border-radius: 8px; padding: 12px; z-index: 15; color: #fff; text-align: center; pointer-events: none; }
+        #morale-bar-container { width: 100%; height: 12px; background: #333; border-radius: 6px; margin: 8px 0 4px; overflow: hidden; }
+        #morale-bar-fill { height: 100%; border-radius: 6px; transition: width 0.5s ease; }
+        #morale-label { font-size: 13px; font-weight: bold; }
+        #morale-desc { font-size: 10px; color: #888; margin-top: 4px; }
+        #morale-bonus { font-size: 10px; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #444; }
+        #morale-bonus .atk-up { color: #4caf50; }
+        #morale-bonus .atk-down { color: #f44336; }
+
+        /* 事件日志 */
+        #event-log { position: absolute; bottom: 10px; left: 10px; width: 300px; height: 150px; background: rgba(0,0,0,0.85); border: 1px solid #ffd700; border-radius: 5px; padding: 5px; overflow-y: auto; z-index: 60; }
+        .log-header { color: #ffd700; text-align: center; font-size: 12px; border-bottom: 1px solid #444; padding-bottom: 2px; margin-bottom: 4px; }
+        .log-item { font-size: 11px; color: #ccc; margin: 2px 0; padding-left: 4px; border-left: 2px solid #555; }
+        .log-good { color: #4caf50; border-color: #4caf50; } .log-bad { color: #f44336; border-color: #f44336; }
+
+        /* 顶部 HUD */
+        #hud-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }
+        .hud-bar { position: absolute; top: 10px; left: 400px; right: 10px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.8); padding: 8px; border-radius: 8px; border: 1px solid #ffd700; pointer-events: auto; }
+        .hud-time { font-size: 18px; color: #fff; }
+        .btn-turn { padding: 5px 15px; background: #4caf50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        
+        /* 城池信息小窗 (z-index 200) — 跟随城池 */
+        #city-popup { position: absolute; top: 0; left: 0; background: rgba(12,12,18,0.96); border: 2px solid #ffd700; border-radius: 12px; z-index: 200; display: none; pointer-events: auto; width: 280px; box-shadow: 0 4px 25px rgba(0,0,0,0.6); color: #fff; }
+        #city-popup.show { display: block; animation: popIn 0.2s ease; }
+        @keyframes popIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        #city-popup .cp-header { padding: 12px 16px; background: rgba(30,30,40,0.9); border-bottom: 1px solid #ffd700; border-radius: 12px 12px 0 0; display: flex; justify-content: space-between; align-items: center; }
+        #city-popup .cp-header h2 { color: #ffd700; font-size: 16px; font-family: "KaiTi"; margin: 0; }
+        #city-popup .cp-close { color: #888; font-size: 20px; cursor: pointer; line-height: 1; padding: 0 4px; }
+        #city-popup .cp-close:hover { color: #fff; }
+        #city-popup .cp-body { padding: 12px 16px; }
+        .cp-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #333; font-size: 13px; }
+        .cp-label { color: #888; }
+        .cp-val { color: #fff; font-weight: bold; }
+        .cp-actions { padding: 8px 16px 14px; display: flex; flex-direction: column; gap: 6px; }
+        .btn-action { width: 100%; padding: 9px 12px; font-size: 13px; border: none; border-radius: 6px; cursor: pointer; color: #fff; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s; }
+        .btn-action:hover { filter: brightness(1.2); }
+        .btn-recruit { background: #8b0000; } .btn-buy { background: #b8860b; } .btn-attack { background: #2e8b57; }
+        .btn-disabled { opacity: 0.4; cursor: not-allowed; filter: none !important; }
+
+        /* 我的势力面板样式 */
+        .sb-row { display: flex; justify-content: space-between; margin-bottom: 4px; padding-bottom: 2px; }
+        .sb-label { color: #888; font-size: 13px; } .sb-val { color: #fff; font-weight: bold; font-size: 13px; }
+
+        /* 外交小窗 (z-index 300) */
+        #dip-popup { position: absolute; top: 80px; left: 10px; background: rgba(12,12,18,0.96); border: 2px solid #ffd700; border-radius: 12px; z-index: 300; display: none; pointer-events: auto; width: 300px; box-shadow: 0 4px 25px rgba(0,0,0,0.6); color: #fff; max-height: 75vh; overflow-y: auto; }
+        #dip-popup.show { display: block; animation: popIn 0.2s ease; }
+        #dip-popup .dp-header { padding: 12px 16px; background: rgba(30,30,40,0.9); border-bottom: 1px solid #ffd700; border-radius: 12px 12px 0 0; display: flex; justify-content: space-between; align-items: center; }
+        #dip-popup .dp-header h2 { color: #ffd700; font-size: 15px; font-family: "KaiTi"; margin: 0; }
+        #dip-popup .dp-close { color: #888; font-size: 20px; cursor: pointer; line-height: 1; padding: 0 4px; }
+        #dip-popup .dp-close:hover { color: #fff; }
+        #dip-popup .dp-body { padding: 10px; }
+        .dip-card { background: rgba(25,25,35,0.8); border: 1px solid #333; border-radius: 8px; padding: 10px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
+        .dip-card:hover { border-color: #666; background: rgba(35,35,45,0.9); }
+        .dip-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .dip-card-name { font-weight: bold; font-size: 14px; }
+        .dip-card-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+        .dip-card-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+        .dip-card-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+        .dip-card-info { display: flex; justify-content: space-between; font-size: 11px; color: #888; }
+        .dip-card-detail { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #444; display: none; }
+        .dip-card-detail.open { display: block; }
+        .dip-act-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+        .dip-act-btn { flex: 1; min-width: 70px; padding: 5px 6px; font-size: 10px; border: 1px solid #555; background: #2a2a2a; color: #ccc; border-radius: 5px; cursor: pointer; text-align: center; transition: all 0.2s; }
+        .dip-act-btn:hover { border-color: #ffd700; color: #ffd700; }
+        .dip-act-btn.disabled { opacity: 0.3; cursor: not-allowed; }
+        .dip-act-btn.gold-btn { border-color: #ffd700; color: #ffd700; }
+
+        /* 攻城小窗 (z-index 1000) — 跟随城池位置 */
+        #attack-popup { position: absolute; top: 0; left: 0; background: rgba(15,15,20,0.96); border: 2px solid #ffd700; border-radius: 10px; padding: 12px; z-index: 1000; display: none; pointer-events: auto; width: 240px; box-shadow: 0 4px 20px rgba(0,0,0,0.7); }
+        #attack-popup.show { display: block; }
+        #attack-popup .popup-title { color: #ffd700; font-size: 15px; text-align: center; margin-bottom: 8px; font-weight: bold; border-bottom: 1px solid #444; padding-bottom: 6px; }
+        .popup-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; max-height: 160px; overflow-y: auto; }
+        .popup-btn { padding: 8px 10px; background: #2a2a2a; border: 1px solid #555; color: #fff; cursor: pointer; border-radius: 6px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; transition: all 0.2s; }
+        .popup-btn:hover { background: #3a3a3a; border-color: #ffd700; }
+        .popup-btn .btn-city { color: #ffd700; font-weight: bold; }
+        .popup-btn .btn-troops { color: #aaa; font-size: 11px; }
+        .popup-close { position: absolute; top: 6px; right: 8px; color: #888; font-size: 16px; cursor: pointer; line-height: 1; }
+        .popup-close:hover { color: #fff; }
+        
+        /* 战术选择下拉框 */
+        #tactic-select { background: #333; color: #fff; border: 1px solid #666; padding: 4px 6px; border-radius: 4px; margin-bottom: 8px; width: 100%; font-size: 11px; }
+
+        /* 菜单层 (z-index 2000) */
+        .menu-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; pointer-events: auto; }
+        .menu-layer.hidden { display: none !important; }
+        .menu-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7) url('images/bg_new.png') center/cover no-repeat; z-index: -1; }
+        .scenario-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; max-width: 1100px; margin: 20px 0; }
+        .scenario-card { width: 300px; padding: 15px; background: rgba(30,30,30,0.9); border: 2px solid #444; border-radius: 8px; cursor: pointer; text-align: left; }
+        .scenario-card:hover { border-color: #ffd700; background: #222; }
+        .scenario-card h3 { color: #ffd700; margin-bottom: 5px; }
+        .scenario-card p { color: #ccc; font-size: 13px; }
+        .lord-grid { display: flex; gap: 15px; margin: 15px 0; flex-wrap: wrap; justify-content: center; }
+        .lord-card { width: 180px; background: #111; border: 2px solid #444; border-radius: 10px; padding: 10px; cursor: pointer; text-align: center; }
+        .lord-card:hover { border-color: #888; }
+        .lord-card.selected { border-color: #4caf50; background: #0a2a0a; }
+        .lord-portrait { width: 100px; height: 100px; background: #333; margin: 0 auto 5px; border-radius: 50%; overflow: hidden; }
+        .lord-portrait img { width: 100%; height: 100%; object-fit: cover; }
+        .btn-main { padding: 12px 30px; font-size: 20px; background: #800; color: #ffd700; border: 2px solid #ffd700; border-radius: 6px; cursor: pointer; margin-top: 15px; }
+        .btn-start { padding: 10px 40px; font-size: 18px; background: #4caf50; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin-top: 15px; display: none; }
+        .btn-start.visible { display: block; }
+        .btn-back { padding: 8px 25px; font-size: 14px; background: #333; color: #aaa; border: 1px solid #555; border-radius: 4px; cursor: pointer; margin-top: 20px; }
+    
+
+    
+        .dip-action-btn { background: #333; color: #fff; border: 1px solid #555; padding: 8px 0; border-radius: 5px; cursor: pointer; font-size: 11px; transition: 0.2s; }
+        .dip-action-btn:hover { background: #444; border-color: #ffd700; }
+        .dip-action-btn:disabled { opacity: 0.5; cursor: not-allowed; border-color: #333; }
+
+    </style>
+</head>
+<body>
+    <div id="stage">
+        <!-- 1. Map Layer (Bottom) -->
+        <div id="map-layer"><img id="map-img" src="images/satellite_map.png"></div>
+        
+        <!-- 2. City Layer (Middle) -->
+        <div id="city-layer"></div>
+
+        <!-- 3. UI Panels (Top) -->
+        <div id="left-menu">
+            <div class="menu-btn" onclick="togglePanel('war')">⚔️ 军事系统 <span>▶</span></div>
+            <div id="panel-war" class="sub-panel"><div style="color:#ffd700; margin-bottom:5px; border-bottom:1px solid #444; padding-bottom:3px;">军事行动</div><p>🛡️ 征兵</p><p>🏯 筑城</p></div>
+            <div class="menu-btn" onclick="toggleDipPopup()">🤝 外交系统 <span>▶</span></div>
+        </div>
+
+        <div id="stability-panel" onclick="toggleStability()">📊 稳定度 <span id="stab-summary" style="margin-left:5px;">计算中</span></div>
+        <div id="stability-details" style="padding:5px; font-size:12px;"></div>
+
+        <!-- 我的势力面板（左侧） -->
+        <div id="my-faction-panel">
+            <div style="color: #ffd700; font-size: 14px; font-weight: bold; margin-bottom: 8px; border-bottom: 1px solid #ffd70044; padding-bottom: 6px;">🏛️ 我的势力</div>
+            <div class="sb-row"><span class="sb-label">🏯 城池</span><span class="sb-val" id="mf-cities">0</span></div>
+            <div class="sb-row"><span class="sb-label">👥 人口</span><span class="sb-val" id="mf-pop">0</span></div>
+            <div class="sb-row"><span class="sb-label">⚔️ 兵力</span><span class="sb-val" id="mf-troops">0</span></div>
+            <div class="sb-row"><span class="sb-label">💰 黄金</span><span class="sb-val" id="mf-gold">0</span></div>
+            <div class="sb-row"><span class="sb-label">🌾 粮草</span><span class="sb-val" id="mf-grain">0</span></div>
+        </div>
+
+        <!-- 士气看板 -->
+        <div id="morale-panel">
+            <div style="color: #ffd700; font-size: 13px; font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #ffd70044; padding-bottom: 4px;">🔥 士气</div>
+            <div id="morale-label" style="font-size: 18px; font-weight: bold;">70</div>
+            <div id="morale-bar-container">
+                <div id="morale-bar-fill" style="width: 70%; background: #4caf50;"></div>
+            </div>
+            <div id="morale-desc">士气平稳</div>
+            <div id="morale-bonus">
+                <span class="atk-up">⚔️ 攻击 +0%</span><br>
+                <span class="atk-up">🛡️ 防御 +0%</span>
+            </div>
+        </div>
+
+        <div id="event-log"><div class="log-header">📜 天下大事</div><div id="log-content"></div></div>
+
+        <!-- HUD -->
+        <div id="hud-layer" style="display:none;">
+            <div id="game-title" style="position: absolute; top: 10px; left: 10px; font-size: 24px; color: #ffd700; font-family: 'KaiTi'; font-weight: bold; text-shadow: 2px 2px 0 #000; z-index: 55; display: none;">无尽三国 3.0</div>
+            <div class="hud-bar">
+                <div class="hud-time">📅 <span id="hud-time">184 年 1 月</span> (<span id="hud-day">第 1/30 天</span>) &nbsp;|&nbsp; ⚡ <span id="hud-ap">5</span></div>
+                <button class="btn-turn" onclick="forceNextTurn()">⏩ 强制过月</button>
+            <button class="btn-turn" id="btn-timer" onclick="toggleAutoTime()" style="background:#2196F3">▶️ 自动流逝</button>
+            </div>
+        </div>
+
+        <!-- 城池信息小窗 -->
+        <div id="city-popup">
+            <div class="cp-header">
+                <h2 id="cp-city-name">城池</h2>
+                <div class="cp-close" onclick="closeCityPopup()">✕</div>
+            </div>
+            <div class="cp-body">
+                <div class="cp-row"><span class="cp-label">势力</span><span class="cp-val" id="cp-faction"></span></div>
+                <div class="cp-row"><span class="cp-label">🏯 城防</span><span class="cp-val" id="cp-defense"></span></div>
+                <div class="cp-row"><span class="cp-label">👥 人口</span><span class="cp-val" id="cp-pop"></span></div>
+                <div class="cp-row"><span class="cp-label">⚔️ 兵力</span><span class="cp-val" id="cp-troops"></span></div>
+                <div class="cp-row"><span class="cp-label">🌾 粮草</span><span class="cp-val" id="cp-grain"></span></div>
+                <div class="cp-row"><span class="cp-label">💰 黄金</span><span class="cp-val" id="cp-gold"></span></div>
+                <div class="cp-row"><span class="cp-label">🌾 驻军耗粮/月</span><span class="cp-val" id="cp-grain-cost" style="color:#ff9800"></span></div>
+            </div>
+            <div class="cp-actions" id="cp-actions"></div>
+        </div>
+
+        <!-- 攻城小窗 -->
+        <div id="attack-popup">
+            <div class="popup-close" onclick="closeAttackPopup()">✕</div>
+            <div class="popup-title" id="popup-title">⚔️ 攻城</div>
+            <select id="tactic-select">
+                <option value="normal">🗡️ 普通攻击</option>
+                <option value="assault">🔥 强攻 (x1.3, 高战损)</option>
+                <option value="raid">🌙 夜袭 (高风险高回报)</option>
+            </select>
+            <div id="attack-source-list" class="popup-list"></div>
+
+<!-- 新增：兵力选择面板 -->
+<div id="troop-select-panel" style="display:none; padding: 10px; border-top: 1px dashed #444; margin-top:10px;">
+    <div style="margin-bottom: 8px; font-size: 12px;">
+        出城：<span id="sel-city-name" style="color:#ffd700;"></span> (可用: <span id="sel-city-max"></span>)
+    </div>
+    <div style="display:flex; align-items:center; gap: 10px; margin-bottom: 8px;">
+        <span style="font-size:10px; color:#888;">100</span>
+        <input type="range" id="troop-slider" min="100" max="1000" step="100" style="flex:1;" oninput="updateTroopDisplay()">
+        <span style="font-size:10px; color:#888;">MAX</span>
+    </div>
+    <div style="text-align: center; margin-bottom: 10px;">
+        实际出兵: <span id="troop-val-display" style="color:#fff; font-weight:bold;">1000</span>
+    </div>
+    
+    <!-- 按钮组 -->
+    <div id="action-buttons" style="display:flex; gap: 5px;">
+        <button class="btn-action btn-attack" style="flex:1; font-size:11px;" onclick="executeAttack('normal')">⚔️ 强攻 (2AP)</button>
+        <button id="btn-siege" class="btn-action" style="flex:1; background:#d97706; display:none; font-size:11px;" onclick="executeAttack('siege')">🏰 围城 (1AP)</button>
+    </div>
+    
+    <button class="btn-outline" onclick="backToCityList()" style="margin-top:8px; width:100%; font-size:10px;">🔙 重新选择城池</button>
+</div>
+        </div>
+
+                
+        <!-- 外交小窗 -->
+        <div id="dip-popup" style="position: absolute; top: 80px; left: 10px; width: 300px; max-height: 75vh; background: rgba(15, 15, 20, 0.98); border: 2px solid #ffd700; border-radius: 12px; z-index: 300; display: none; overflow: hidden;">
+            <!-- 头部 -->
+            <div style="padding: 12px 15px; background: #222; border-bottom: 1px solid #ffd700; display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #ffd700; font-weight: bold; font-size: 16px;">🤝 外交</span>
+                <button onclick="closeDipPopup()" style="background: none; border: none; color: #888; font-size: 24px; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+            
+            <!-- 列表容器 -->
+            <div id="dip-body" style="padding: 10px; max-height: 60vh; overflow-y: auto;">
+                <!-- 列表项将由 JS 生成 -->
+            </div>
+            
+            <!-- 详情面板 (覆盖层) -->
+            <div id="dip-detail-panel" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 15, 20, 0.98); z-index: 20; overflow-y: auto;">
+                <div style="position: sticky; top: 0; background: #222; padding: 10px; border-bottom: 1px solid #444; display: flex; justify-content: space-between; align-items: center;">
+                    <button onclick="backToDipList()" style="background: #444; color: #fff; border: 1px solid #666; padding: 4px 8px; cursor: pointer; border-radius: 4px;">🔙 返回列表</button>
+                    <span id="dip-detail-name" style="color: #ffd700; font-weight: bold; font-size: 14px;">势力</span>
+                </div>
+                <div style="padding: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; color: #ccc; font-size: 13px; padding: 5px 0; border-bottom: 1px solid #333;">
+                        <span>关系: <span id="dip-detail-rel" style="color: #4caf50; font-weight: bold;">50</span></span>
+                        <span>状态: <span id="dip-detail-status">中立</span></span>
+                    </div>
+                    
+                    <!-- 按钮组 -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <button id="btn-dip-gift1" class="dip-action-btn" onclick="doDipGift(100)">🎁 赠百金</button>
+                        <button id="btn-dip-gift2" class="dip-action-btn" onclick="doDipGift(500)">💰 赠千金</button>
+                        <button id="btn-dip-ally" class="dip-action-btn" onclick="doDipAlliance()">🤝 结盟</button>
+                        <button id="btn-dip-provoke" class="dip-action-btn" onclick="doDipProvoke()">😡 挑衅</button>
+                    </div>
+                    <div id="dip-action-msg" style="margin-top: 15px; font-size: 12px; color: #888; text-align: center; min-height: 20px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 攻城小窗 -->
+        <div id="attack-popup">
+            <div class="popup-close" onclick="closeAttackPopup()">✕</div>
+            <div class="popup-title" id="popup-title">⚔️ 攻城</div>
+            <select id="tactic-select">
+                <option value="normal">🗡️ 普通攻击</option>
+                <option value="assault">🔥 强攻 (x1.3, 高战损)</option>
+                <option value="raid">🌙 夜袭 (高风险高回报)</option>
+            </select>
+            <div id="attack-source-list" class="popup-list"></div>
+
+<!-- 新增：兵力选择面板 -->
+<div id="troop-select-panel" style="display:none; padding: 10px; border-top: 1px dashed #444; margin-top:10px;">
+    <div style="margin-bottom: 8px; font-size: 12px;">
+        出城：<span id="sel-city-name" style="color:#ffd700;"></span> (可用: <span id="sel-city-max"></span>)
+    </div>
+    <div style="display:flex; align-items:center; gap: 10px; margin-bottom: 8px;">
+        <span style="font-size:10px; color:#888;">100</span>
+        <input type="range" id="troop-slider" min="100" max="1000" step="100" style="flex:1;" oninput="updateTroopDisplay()">
+        <span style="font-size:10px; color:#888;">MAX</span>
+    </div>
+    <div style="text-align: center; margin-bottom: 10px;">
+        实际出兵: <span id="troop-val-display" style="color:#fff; font-weight:bold;">1000</span>
+    </div>
+    
+    <!-- 按钮组 -->
+    <div id="action-buttons" style="display:flex; gap: 5px;">
+        <button class="btn-action btn-attack" style="flex:1; font-size:11px;" onclick="executeAttack('normal')">⚔️ 强攻 (2AP)</button>
+        <button id="btn-siege" class="btn-action" style="flex:1; background:#d97706; display:none; font-size:11px;" onclick="executeAttack('siege')">🏰 围城 (1AP)</button>
+    </div>
+    
+    <button class="btn-outline" onclick="backToCityList()" style="margin-top:8px; width:100%; font-size:10px;">🔙 重新选择城池</button>
+</div>
+        </div>
+
+                <!-- 外交小窗 -->
+        <div id="dip-popup">
+            <div class="dp-header">
+                <h2>🤝 外交</h2>
+                <div class="dp-close" onclick="closeDipPopup()">✕</div>
+            </div>
+            <div class="dp-body" id="dip-body"></div>
+            
+            <!-- 外交详情面板 (覆盖在 body 上) -->
+            <div id="dip-detail-panel" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(15,15,20,0.98); border-radius:0 0 10px 10px; padding:15px; z-index:20; box-sizing: border-box;">
+                <button onclick="backToDipList()" style="position:absolute; top:10px; left:10px; background:#444; color:#fff; border:1px solid #666; padding:4px 8px; border-radius:4px; cursor:pointer;">🔙 返回列表</button>
+                <div style="margin-top:35px;">
+                    <h3 id="dip-detail-name" style="color:#ffd700; text-align:center; margin:0 0 15px 0;">势力名称</h3>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:15px; color:#ccc; font-size:13px; padding:0 10px; border-bottom:1px solid #333; padding-bottom:10px;">
+                        <span>关系: <span id="dip-detail-rel" style="color:#4caf50; font-weight:bold;">50</span></span>
+                        <span>状态: <span id="dip-detail-status">中立</span></span>
+                    </div>
+                    
+                    <!-- 按钮组 -->
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+                        <button id="btn-dip-gift1" class="dip-action-btn" onclick="doDipGift(100)">🎁 赠百金 (1AP)</button>
+                        <button id="btn-dip-gift2" class="dip-action-btn" onclick="doDipGift(500)">💰 赠千金 (2AP)</button>
+                        <button id="btn-dip-ally" class="dip-action-btn" onclick="doDipAlliance()">🤝 结盟 (2AP)</button>
+                        <button id="btn-dip-provoke" class="dip-action-btn" onclick="doDipProvoke()">😡 挑衅 (1AP)</button>
+                    </div>
+                    <div id="dip-action-msg" style="margin-top:15px; font-size:11px; color:#888; text-align:center;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 攻城小窗 -->
+        <div id="attack-popup">
+            <div class="popup-close" onclick="closeAttackPopup()">✕</div>
+            <div class="popup-title" id="popup-title">⚔️ 攻城</div>
+            <select id="tactic-select">
+                <option value="normal">🗡️ 普通攻击</option>
+                <option value="assault">🔥 强攻 (x1.3, 高战损)</option>
+                <option value="raid">🌙 夜袭 (高风险高回报)</option>
+            </select>
+            <div id="attack-source-list" class="popup-list"></div>
+
+<!-- 新增：兵力选择面板 -->
+<div id="troop-select-panel" style="display:none; padding: 10px; border-top: 1px dashed #444; margin-top:10px;">
+    <div style="margin-bottom: 8px; font-size: 12px;">
+        出城：<span id="sel-city-name" style="color:#ffd700;"></span> (可用: <span id="sel-city-max"></span>)
+    </div>
+    <div style="display:flex; align-items:center; gap: 10px; margin-bottom: 8px;">
+        <span style="font-size:10px; color:#888;">100</span>
+        <input type="range" id="troop-slider" min="100" max="1000" step="100" style="flex:1;" oninput="updateTroopDisplay()">
+        <span style="font-size:10px; color:#888;">MAX</span>
+    </div>
+    <div style="text-align: center; margin-bottom: 10px;">
+        实际出兵: <span id="troop-val-display" style="color:#fff; font-weight:bold;">1000</span>
+    </div>
+    
+    <!-- 按钮组 -->
+    <div id="action-buttons" style="display:flex; gap: 5px;">
+        <button class="btn-action btn-attack" style="flex:1; font-size:11px;" onclick="executeAttack('normal')">⚔️ 强攻 (2AP)</button>
+        <button id="btn-siege" class="btn-action" style="flex:1; background:#d97706; display:none; font-size:11px;" onclick="executeAttack('siege')">🏰 围城 (1AP)</button>
+    </div>
+    
+    <button class="btn-outline" onclick="backToCityList()" style="margin-top:8px; width:100%; font-size:10px;">🔙 重新选择城池</button>
+</div>
+        </div>
+
+        <!-- 外交小窗 -->
+        <div id="dip-popup">
+            <div class="dp-header">
+                <h2>🤝 外交</h2>
+                <div class="dp-close" onclick="closeDipPopup()">✕</div>
+            </div>
+            <div class="dp-body" id="dip-body"></div>
+
+        <!-- 外交详情面板 (悬浮在原列表之上) -->
+        <div id="dip-detail-panel" style="display:none; position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(15,15,20,0.98); border-radius:10px; padding:10px; z-index:20;">
+            <button onclick="backToDipList()" style="position:absolute; top:8px; left:8px; background:#444; color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">🔙 返回列表</button>
+            <div style="margin-top:30px;">
+                <h3 id="dip-detail-name" style="color:#ffd700; text-align:center; margin:0 0 10px 0;">势力名称</h3>
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px; color:#ccc; font-size:12px; padding:0 10px;">
+                    <span>关系: <span id="dip-detail-rel" style="color:#4caf50; font-weight:bold;">50</span></span>
+                    <span>状态: <span id="dip-detail-status">中立</span></span>
+                </div>
+                
+                <!-- 按钮组 -->
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; padding:0 5px;">
+                    <button id="btn-dip-gift1" class="dip-action-btn" onclick="doDipGift(100)">🎁 赠百金 (1AP)</button>
+                    <button id="btn-dip-gift2" class="dip-action-btn" onclick="doDipGift(500)">💰 赠千金 (2AP)</button>
+                    <button id="btn-dip-ally" class="dip-action-btn" onclick="doDipAlliance()">🤝 结盟 (2AP)</button>
+                    <button id="btn-dip-provoke" class="dip-action-btn" onclick="doDipProvoke()">😡 挑衅 (1AP)</button>
+                </div>
+                <div id="dip-action-msg" style="margin-top:15px; font-size:11px; color:#888; text-align:center; min-height:1.5em;"></div>
+            </div>
+        </div>
+
+        </div>
+
+        <!-- Menus -->
+        <div id="menu-main" class="menu-layer"><div class="menu-bg"></div>
+            <h1 style="font-size:60px; color:#ffd700; text-shadow:0 0 20px #a00; font-family:KaiTi; margin-bottom:10px;">无尽三国 3.0</h1>
+        <div style="margin: 10px 0 20px 0; font-size: 12px; color: #888; letter-spacing: 1px; font-family: monospace;">
+            凯老板出品 🦐
+        </div>
+
+            <button class="btn-main" onclick="showScenarioSelect()">开始游戏</button>
+        </div>
+        <div id="menu-scenario" class="menu-layer hidden"><div class="menu-bg"></div>
+            <h2 style="color:#ffd700; margin-bottom:20px;">选择时代</h2>
+            <div class="scenario-grid" id="scenario-list"></div>
+            <button class="btn-back" onclick="showMainMenu()">返回</button>
+        </div>
+        <div id="menu-lord" class="menu-layer hidden"><div class="menu-bg"></div>
+            <h2 style="color:#ffd700; margin-bottom:10px;" id="lord-title">选择主公</h2>
+            <div class="lord-grid" id="lord-list"></div>
+            <button class="btn-start" id="btn-enter-game" onclick="enterGame()">进入天下</button>
+            <button class="btn-back" onclick="showScenarioSelect()">返回</button>
+        </div>
+    </div>
+    <script src="data.js"></script>
+    <script src="data_scenarios.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
